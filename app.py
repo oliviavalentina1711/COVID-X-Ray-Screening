@@ -1,54 +1,62 @@
-import json
-import numpy as np
 import streamlit as st
-import tensorflow as tf
+import numpy as np
 from PIL import Image
+import tensorflow as tf
 from tensorflow.keras.models import load_model
-from tensorflow.keras.applications.mobilenet_v2 import preprocess_input
 
-IMG_SIZE = (224, 224)
+st.set_page_config(page_title="COVID X-Ray Screening", layout="centered")
+
+st.title("COVID X-Ray Screening")
+st.write("Upload gambar X-ray paru-paru untuk melakukan prediksi.")
+
+MODEL_PATH = "best_covid_model.keras"
+
+class_labels = {
+    0: "COVID",
+    1: "Normal",
+    2: "Viral Pneumonia"
+}
 
 @st.cache_resource
-def load_prediction_model():
-    model = load_model("best_covid_model.keras")
+def load_covid_model():
+    model = load_model(MODEL_PATH)
     return model
 
-@st.cache_data
-def load_class_mapping():
-    with open("class_indices.json", "r") as f:
-        class_indices = json.load(f)
-    index_to_class = {int(v): k for k, v in class_indices.items()}
-    return index_to_class
+try:
+    model = load_covid_model()
+    st.success("Model berhasil dimuat.")
+except Exception as e:
+    st.error("Model gagal dimuat. Pastikan file best_covid_model.keras ada di repository.")
+    st.error(e)
+    st.stop()
 
-def preprocess_image(uploaded_image):
-    image = Image.open(uploaded_image).convert("RGB")
-    image = image.resize(IMG_SIZE)
-    image_array = np.array(image)
-    image_array = np.expand_dims(image_array, axis=0)
-    image_array = preprocess_input(image_array)
-    return image, image_array
-
-st.title("COVID-19 X-ray Image Classification")
-st.write("Upload an X-ray image and the model will predict the class.")
-
-model = load_prediction_model()
-index_to_class = load_class_mapping()
-
-uploaded_file = st.file_uploader("Upload image", type=["jpg", "jpeg", "png"])
+uploaded_file = st.file_uploader(
+    "Upload gambar X-ray",
+    type=["jpg", "jpeg", "png"]
+)
 
 if uploaded_file is not None:
-    image, processed_image = preprocess_image(uploaded_file)
-    prediction = model.predict(processed_image)
+    image = Image.open(uploaded_file).convert("RGB")
 
-    predicted_index = int(np.argmax(prediction, axis=1)[0])
-    confidence = float(np.max(prediction))
-    predicted_label = index_to_class[predicted_index]
+    st.image(image, caption="Gambar yang diupload", use_column_width=True)
 
-    st.image(image, caption="Uploaded Image", use_container_width=True)
-    st.subheader("Prediction Result")
-    st.write(f"Predicted label: {predicted_label}")
-    st.write(f"Confidence score: {confidence:.2%}")
+    img = image.resize((224, 224))
+    img_array = np.array(img) / 255.0
+    img_array = np.expand_dims(img_array, axis=0)
 
-    st.write("Class probabilities:")
-    for idx, probability in enumerate(prediction[0]):
-        st.write(f"{index_to_class[idx]}: {probability:.2%}")
+    if st.button("Predict"):
+        prediction = model.predict(img_array)
+
+        predicted_index = int(np.argmax(prediction[0]))
+        predicted_label = class_labels[predicted_index]
+        confidence_score = float(prediction[0][predicted_index])
+
+        st.subheader("Hasil Prediksi")
+        st.write("Predicted Class:", predicted_label)
+        st.write("Confidence Score:", round(confidence_score, 4))
+
+        st.subheader("Probabilitas setiap class")
+        for index, probability in enumerate(prediction[0]):
+            st.write(class_labels[index], ":", round(float(probability), 4))
+else:
+    st.info("Silakan upload gambar terlebih dahulu.")
